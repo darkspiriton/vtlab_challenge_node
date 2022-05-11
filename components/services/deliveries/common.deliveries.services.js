@@ -67,7 +67,6 @@ const filter = async (req) => {
   // obtener variables para limitar el query de los documentos de delivery
   let limit = req.body.limit ? (req.body.limit > 100 ? 100 : parseInt(req.body.limit)) : 100;
   let skip = req.body.page ? ((Math.max(0, parseInt(req.body.page)) - 1) * limit) : 0;
-  // let sort = { _id: 1 };
 
   // preparar query para obtener deliveries
   let queryAggregator = [
