@@ -5,14 +5,14 @@ const find = async (req) => {
   let query = {};
   let limit = req.body.limit ? (req.body.limit > 100 ? 100 : parseInt(req.body.limit)) : 100;
   let skip = req.body.page ? ((Math.max(0, parseInt(req.body.page)) - 1) * limit) : 0;
-  let sort = { _id: 1 }
+  let sort = { _id: 1 };
 
   // if date provided, filter by date
   if (req.body.when) {
     query['when'] = {
       '$gte': req.body.when
-    }
-  };
+    };
+  }
 
   let totalResults = await Deliveries.find(query).countDocuments();
 
@@ -20,9 +20,9 @@ const find = async (req) => {
     throw {
       code: 404,
       data: {
-        message: `We couldn't find any delivery`
+        message: 'We couldn\'t find any delivery'
       }
-    }
+    };
   }
 
   let deliveries = await Deliveries.find(query).skip(skip).sort(sort).limit(limit);
@@ -30,8 +30,8 @@ const find = async (req) => {
   return {
     totalResults: totalResults,
     deliveries
-  }
-}
+  };
+};
 
 const create = async (req) => {
   try {
@@ -43,25 +43,116 @@ const create = async (req) => {
         message: `An error has occurred trying to create the delivery:
           ${JSON.stringify(e, null, 2)}`
       }
-    }
+    };
   }
-}
+};
 
 const findOne = async (req) => {
-  let delivery = await Deliveries.findOne({_id: req.body.id});
+  let delivery = await Deliveries.findOne({ _id: req.body.id });
   if (!delivery) {
     throw {
       code: 404,
       data: {
-        message: `We couldn't find a delivery with the sent ID`
+        message: 'We couldn\'t find a delivery with the sent ID'
       }
-    }
+    };
   }
   return delivery;
-}
+};
+
+const filter = async (req) => {
+  // obtener variables para filtrar los documentos de delivery
+  let { dateFrom, dateTo, weight } = req.body;
+
+  // obtener variables para limitar el query de los documentos de delivery
+  let limit = req.body.limit ? (req.body.limit > 100 ? 100 : parseInt(req.body.limit)) : 100;
+  let skip = req.body.page ? ((Math.max(0, parseInt(req.body.page)) - 1) * limit) : 0;
+  // let sort = { _id: 1 };
+
+  // preparar query para obtener deliveries
+  let queryAggregator = [
+    {
+      $match: {
+        when: { $gte: new Date(dateFrom), $lte: new Date(dateTo) }
+      }
+    },
+    {
+      $skip: skip
+    },
+    {
+      $limit: limit
+    },
+    {
+      $unwind: {
+        path: '$products',
+      }
+    },
+    {
+      $lookup:
+      {
+        from: 'products',
+        let: { product: '$products' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $eq: ['$_id', '$$product']
+              }
+            }
+          },
+        ],
+        as: 'product'
+      }
+    },
+    {
+      $group: {
+        origin: { $first: '$origin' },
+        destination: { $first: '$destination' },
+        products: { $addToSet: { $first: '$product' } },
+        _id: '$_id',
+        when: { $first: '$when' },
+        __v: { $first: '$__v' }
+      }
+    },
+    {
+      $match: {
+        'products.weight': { $gte: weight }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalResults: { $sum: 1 },
+        deliveries: {
+          $push: '$$ROOT'
+        },
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        totalResults: 1,
+        deliveries: 1
+      }
+    },
+  ];
+
+  // ejecutar query
+  let delivery = await Deliveries.aggregate(queryAggregator);
+  if (!delivery) {
+    throw {
+      code: 404,
+      data: {
+        message: 'We couldn\'t find a delivery with the sent ID'
+      }
+    };
+  }
+  return delivery;
+};
 
 export default {
   find,
   create,
-  findOne
-}
+  findOne,
+  filter
+};
